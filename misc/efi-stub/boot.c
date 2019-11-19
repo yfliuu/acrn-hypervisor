@@ -404,7 +404,7 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *_table)
 	cmdline16 = StrDuplicate(options);
 	bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
 	for (n = options; n < options + options_size; n++) {
-		cmdline16 = StrSDuplicate(n);
+		cmdline16 = StrDuplicate(n);
 		bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
 		if (bootloader_name)
 			break;
