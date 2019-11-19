@@ -397,8 +397,19 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *_table)
 	/* First check if we were given a bootloader name
 	 * E.g.: "bootloader=\EFI\org.clearlinux\bootloaderx64.efi"
 	 */
-	cmdline16 = StrDuplicate(options);
-	bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
+	/* 
+	 * Y: Possible problems: options may contain multiple 0-ending
+	 * strings: it is not ONE single string.
+	 */
+	for (n = options; n < options + options_size; n++) {
+		cmdline16 = StrSDuplicate(n);
+		bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
+		if (bootloader_name)
+			break;
+		while (*n && n < options + options_size) n++;
+	}
+	// cmdline16 = StrDuplicate(options);
+	// bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
 	if (bootloader_name) {
 		bootloader_name = bootloader_name + StrLen(bootloader_param);
 		n = bootloader_name;
