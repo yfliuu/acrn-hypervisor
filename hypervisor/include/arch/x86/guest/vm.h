@@ -98,6 +98,7 @@ struct vm_arch {
 	 * but Normal World can not access Secure World's memory.
 	 */
 	void *sworld_eptp;
+	void *eptp_list;
 	struct memory_ops ept_mem_ops;
 
 	void *tmp_pg_array;	/* Page array for tmp guest paging struct */

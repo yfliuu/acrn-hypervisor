@@ -42,6 +42,9 @@ static struct acrn_vm *sos_vm_ptr = NULL;
 
 static struct e820_entry sos_ve820[E820_MAX_ENTRIES];
 
+/* YFLIU: EPTP list */
+static void *eptp_list[MAX_EPTP_LIST_ENTRIES] __aligned(PAGE_SIZE);
+
 uint16_t get_vmid_by_uuid(const uint8_t *uuid)
 {
 	uint16_t vm_id = 0U;
@@ -452,7 +455,9 @@ int32_t create_vm(uint16_t vm_id, struct acrn_vm_config *vm_config, struct acrn_
 
 	init_ept_mem_ops(&vm->arch_vm.ept_mem_ops, vm->vm_id);
 	vm->arch_vm.nworld_eptp = vm->arch_vm.ept_mem_ops.get_pml4_page(vm->arch_vm.ept_mem_ops.info);
+	vm->arch_vm.eptp_list = (void *)eptp_list;
 	sanitize_pte((uint64_t *)vm->arch_vm.nworld_eptp, &vm->arch_vm.ept_mem_ops);
+	eptp_list[vm_id] = vm->arch_vm.nworld_eptp;
 
 	(void)memcpy_s(&vm->uuid[0], sizeof(vm->uuid),
 		&vm_config->uuid[0], sizeof(vm_config->uuid));
@@ -811,6 +816,12 @@ void launch_vms(uint16_t pcpu_id)
 {
 	uint16_t vm_id, bsp_id;
 	struct acrn_vm_config *vm_config;
+
+	/* YFLIU: Initialize eptp list
+	 * Probably should've put somewhere else
+	 * to make this more clean
+	 */
+	memset(eptp_list, 0, PAGE_SIZE);
 
 	for (vm_id = 0U; vm_id < CONFIG_MAX_VM_NUM; vm_id++) {
 		vm_config = get_vm_config(vm_id);

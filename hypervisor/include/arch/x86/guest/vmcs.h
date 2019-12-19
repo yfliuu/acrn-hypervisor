@@ -14,6 +14,7 @@
 #include <types.h>
 #include <vcpu.h>
 
+#define MAX_EPTP_LIST_ENTRIES			512U
 #define VMX_VMENTRY_FAIL                0x80000000U
 
 #define APIC_ACCESS_OFFSET              0xFFFUL   /* 11:0, offset within the APIC page */

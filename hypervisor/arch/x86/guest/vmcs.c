@@ -290,9 +290,12 @@ static void init_exec_ctrl(struct acrn_vcpu *vcpu)
 	 * 24.6.2. Set up for: * Enable EPT * Enable RDTSCP * Unrestricted
 	 * guest (optional)
 	 */
+	/* YFLIU: Enable VMFUNC here
+	 */
 	value32 = check_vmx_ctrl(MSR_IA32_VMX_PROCBASED_CTLS2,
 			VMX_PROCBASED_CTLS2_VAPIC | VMX_PROCBASED_CTLS2_EPT |
-			VMX_PROCBASED_CTLS2_RDTSCP | VMX_PROCBASED_CTLS2_UNRESTRICT);
+			VMX_PROCBASED_CTLS2_RDTSCP | VMX_PROCBASED_CTLS2_UNRESTRICT |
+			VMX_PROCBASED_CTLS2_VM_FUNCS);
 
 	if (vcpu->arch.vpid != 0U) {
 		value32 |= VMX_PROCBASED_CTLS2_VPID;
@@ -354,6 +357,21 @@ static void init_exec_ctrl(struct acrn_vcpu *vcpu)
 	value64 = hva2hpa(vm->arch_vm.nworld_eptp) | (3UL << 3U) | 6UL;
 	exec_vmwrite64(VMX_EPT_POINTER_FULL, value64);
 	pr_dbg("VMX_EPT_POINTER: 0x%016llx ", value64);
+
+	/* Setup VM function execution control
+	 * Only EPTP switching (bit 0) is enabled
+	 */
+	value64 = 1UL;
+	exec_vmwrite64(VMX_VM_FUNC_CTL_FULL, value64);
+
+	/* Setup EPTP list address
+	 * 1. allocate a 4KB memory region (static array in vm.c)
+	 * 2. put every ept pointer in that list (put the nworld_eptp thing in the array)
+	 * 3. write the memory region address here (done)
+	 * 4. TEST!
+	 */
+	value64 = hva2hpa(vm->arch_vm.eptp_list);
+	exec_vmwrite64(VMX_EPTP_LIST_ADDR_FULL, value64);
 
 	/* Set up guest exception mask bitmap setting a bit * causes a VM exit
 	 * on corresponding guest * exception - pg 2902 24.6.3
