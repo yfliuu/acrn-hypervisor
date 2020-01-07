@@ -353,6 +353,12 @@ static int32_t check_vmx_mmu_cap(void)
 	return ret;
 }
 
+static int32_t check_eptp_switching_cap(void)
+{
+	uint64_t vmx_msr;
+	vmx_msr = msr_read(MSR_IA32_VMX_VMFUNC);
+	return vmx_msr & 1;
+}
 
 /*
  * basic hardware capability check
@@ -425,6 +431,9 @@ int32_t detect_hardware_support(void)
 		ret = -ENODEV;
 	} else if (!pcpu_has_cap(X86_FEATURE_POPCNT)) {
 		printf("%s, popcnt instruction not supported\n", __func__);
+		ret = -ENODEV;
+	} else if (!check_eptp_switching_cap()) {
+		printf("%s, eptp switching not supported\n", __func__);
 		ret = -ENODEV;
 	} else {
 		ret = check_vmx_mmu_cap();

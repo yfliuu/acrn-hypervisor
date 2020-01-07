@@ -347,7 +347,7 @@ static inline EFI_STATUS isspace(CHAR8 ch)
     return ((uint8_t)ch <= ' ');
 }
 
-#define DEFAULT_UEFI_OS_LOADER_NAME L"\\EFI\\org.clearlinux\\bootloaderx64.efi"
+#define DEFAULT_UEFI_OS_LOADER_NAME L"\\EFI\\ubuntu\\grubx64.efi"
 /**
  * efi_main - The entry point for the OS loader image.
  * @image: firmware-allocated handle that identifies the image
@@ -403,13 +403,6 @@ efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *_table)
 	 */
 	cmdline16 = StrDuplicate(options);
 	bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
-	for (n = options; n < options + options_size; n++) {
-		cmdline16 = StrDuplicate(n);
-		bootloader_name = strstr_16(cmdline16, bootloader_param, StrLen(bootloader_param));
-		if (bootloader_name)
-			break;
-		while (*n && n < options + options_size) n++;
-	}
 	if (bootloader_name) {
 		bootloader_name = bootloader_name + StrLen(bootloader_param);
 		n = bootloader_name;

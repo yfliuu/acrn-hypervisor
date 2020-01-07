@@ -457,7 +457,7 @@ int32_t create_vm(uint16_t vm_id, struct acrn_vm_config *vm_config, struct acrn_
 	vm->arch_vm.nworld_eptp = vm->arch_vm.ept_mem_ops.get_pml4_page(vm->arch_vm.ept_mem_ops.info);
 	vm->arch_vm.eptp_list = (void *)eptp_list;
 	sanitize_pte((uint64_t *)vm->arch_vm.nworld_eptp, &vm->arch_vm.ept_mem_ops);
-	eptp_list[vm_id] = vm->arch_vm.nworld_eptp;
+	eptp_list[vm_id] = hva2hpa(vm->arch_vm.nworld_eptp) | (3UL << 3U) | 6UL;
 
 	(void)memcpy_s(&vm->uuid[0], sizeof(vm->uuid),
 		&vm_config->uuid[0], sizeof(vm_config->uuid));
