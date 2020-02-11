@@ -413,7 +413,7 @@ int32_t hcall_save_restore_sworld_ctx(struct acrn_vcpu *vcpu);
  */
 int32_t hcall_set_callback_vector(const struct acrn_vm *vm, uint64_t param);
 
-int32_t hcall_stitch_ept(struct acrn_vcpu *vm, uint64_t *pml4_root_gpa);
+int32_t hcall_stitch_ept(struct acrn_vcpu *vm, uint64_t pml4_root_gpa);
 
 /**
  * @}
