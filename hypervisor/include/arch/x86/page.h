@@ -17,7 +17,7 @@
 /* size of the high MMIO address space: 1GB */
 #define PLATFORM_HI_MMIO_SIZE	0x40000000UL
 
-#define MAX_STITCHED_EPTP		4
+#define MAX_STITCHED_EPTP		1
 
 #define PML4_PAGE_NUM(size)	1UL
 #define PDPT_PAGE_NUM(size)	(((size) + PML4E_SIZE - 1UL) >> PML4E_SHIFT)

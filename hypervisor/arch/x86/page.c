@@ -88,10 +88,11 @@ static struct page uos_nworld_pd_pages[CONFIG_MAX_VM_NUM - 1U][PD_PAGE_NUM(EPT_A
 static struct page uos_nworld_pt_pages[CONFIG_MAX_VM_NUM - 1U][PT_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
 
 /* pos_nworld_pml4_pages[i] is ...... of Para kernel EPT i */
-static struct page pos_nworld_pml4_pages[CONFIG_MAX_VM_NUM - 1U][MAX_STITCHED_EPTP][PML4_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
-static struct page pos_nworld_pdpt_pages[CONFIG_MAX_VM_NUM - 1U][MAX_STITCHED_EPTP][PDPT_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
-static struct page pos_nworld_pd_pages[CONFIG_MAX_VM_NUM - 1U][MAX_STITCHED_EPTP][PD_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
-static struct page pos_nworld_pt_pages[CONFIG_MAX_VM_NUM - 1U][MAX_STITCHED_EPTP][PT_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
+/* Because the space is limited, we can only afford one machine to have multiple EPT storage */
+static struct page pos_nworld_pml4_pages[1U][MAX_STITCHED_EPTP][PML4_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
+static struct page pos_nworld_pdpt_pages[1U][MAX_STITCHED_EPTP][PDPT_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
+static struct page pos_nworld_pd_pages[1U][MAX_STITCHED_EPTP][PD_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
+static struct page pos_nworld_pt_pages[1U][MAX_STITCHED_EPTP][PT_PAGE_NUM(EPT_ADDRESS_SPACE(CONFIG_UOS_RAM_SIZE))];
 
 static struct page uos_sworld_pgtable_pages[CONFIG_MAX_VM_NUM - 1U][TRUSTY_PGTABLE_PAGE_NUM(TRUSTY_RAM_SIZE)];
 /* pre-assumption: TRUSTY_RAM_SIZE is 2M aligned */
@@ -239,10 +240,10 @@ static inline uint16_t ept_get_operating_ept_id(const union pgtable_pages_info *
 static inline void ept_set_operating_ept_id(union pgtable_pages_info *info, uint16_t vm_id, uint16_t id)
 {
 	info->ept.operating_ept_id = id;
-	info->ept.para_pml4_base = pos_nworld_pml4_pages[vm_id - 1U][id];
-	info->ept.para_pdpt_base = pos_nworld_pdpt_pages[vm_id - 1U][id];
-	info->ept.para_pd_base = pos_nworld_pd_pages[vm_id - 1U][id];
-	info->ept.para_pt_base = pos_nworld_pt_pages[vm_id - 1U][id];
+	info->ept.para_pml4_base = pos_nworld_pml4_pages[vm_id - 2U][id];
+	info->ept.para_pdpt_base = pos_nworld_pdpt_pages[vm_id - 2U][id];
+	info->ept.para_pd_base = pos_nworld_pd_pages[vm_id - 2U][id];
+	info->ept.para_pt_base = pos_nworld_pt_pages[vm_id - 2U][id];
 }
 
 static inline uint16_t ept_get_operating_ept_count(const union pgtable_pages_info *info)
