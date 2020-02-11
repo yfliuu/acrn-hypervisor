@@ -1228,6 +1228,6 @@ int32_t hcall_stitch_ept(struct acrn_vcpu *vcpu, uint64_t pml4_root_gpa)
 		&memops_bak, sizeof(struct memory_ops));
 
 	/* Next, inform the custom kernel */
-	vcpu_inject_extint(vm_dst);
+	vcpu_inject_extint(vcpu);
 	return ret;
 }
