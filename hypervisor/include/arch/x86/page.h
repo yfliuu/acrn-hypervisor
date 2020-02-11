@@ -17,6 +17,8 @@
 /* size of the high MMIO address space: 1GB */
 #define PLATFORM_HI_MMIO_SIZE	0x40000000UL
 
+#define MAX_STITCHED_EPTP		4
+
 #define PML4_PAGE_NUM(size)	1UL
 #define PDPT_PAGE_NUM(size)	(((size) + PML4E_SIZE - 1UL) >> PML4E_SHIFT)
 #define PD_PAGE_NUM(size)	(((size) + PDPTE_SIZE - 1UL) >> PDPTE_SHIFT)
@@ -53,10 +55,18 @@ union pgtable_pages_info {
 	} ppt;
 	struct {
 		uint64_t top_address_space;
+		uint16_t operating_ept_id;
+		uint16_t operating_ept_count;
 		struct page *nworld_pml4_base;
 		struct page *nworld_pdpt_base;
 		struct page *nworld_pd_base;
 		struct page *nworld_pt_base;
+
+		struct page *para_pml4_base;
+		struct page *para_pdpt_base;
+		struct page *para_pd_base;
+		struct page *para_pt_base;
+
 		struct page *sworld_pgtable_base;
 		struct page *sworld_memory_base;
 	} ept;
@@ -70,6 +80,14 @@ struct memory_ops {
 	struct page *(*get_pdpt_page)(const union pgtable_pages_info *info, uint64_t gpa);
 	struct page *(*get_pd_page)(const union pgtable_pages_info *info, uint64_t gpa);
 	struct page *(*get_pt_page)(const union pgtable_pages_info *info, uint64_t gpa);
+	struct page *(*get_para_pml4_page)(const union pgtable_pages_info *info);
+	struct page *(*get_para_pdpt_page)(const union pgtable_pages_info *info, uint64_t gpa);
+	struct page *(*get_para_pd_page)(const union pgtable_pages_info *info, uint64_t gpa);
+	struct page *(*get_para_pt_page)(const union pgtable_pages_info *info, uint64_t gpa);
+	uint16_t (*get_operating_ept_id)(const union pgtable_pages_info *info);
+	void (*set_operating_ept_id)(union pgtable_pages_info *info, uint16_t vm_id, uint16_t id);
+	uint16_t (*get_operating_ept_count)(const union pgtable_pages_info *info);
+	int32_t (*alloc_operating_ept)(union pgtable_pages_info *info);
 	void *(*get_sworld_memory_base)(const union pgtable_pages_info *info);
 	void (*clflush_pagewalk)(const void *p);
 	void (*tweak_exe_right)(uint64_t *entry);

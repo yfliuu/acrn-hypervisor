@@ -32,9 +32,6 @@
 #include <pci_dev.h>
 #include <vacpi.h>
 
-#define SHARED_MEMORY_GPA	0x80000
-#define SHARED_MEMORY_SIZE	0x4000
-
 vm_sw_loader_t vm_sw_loader;
 
 /* Local variables */
@@ -44,9 +41,6 @@ static struct acrn_vm vm_array[CONFIG_MAX_VM_NUM] __aligned(PAGE_SIZE);
 static struct acrn_vm *sos_vm_ptr = NULL;
 
 static struct e820_entry sos_ve820[E820_MAX_ENTRIES];
-
-/* YFLIU: Shared memory */
-static char shared_mem[SHARED_MEMORY_SIZE];
 
 /* YFLIU: EPTP list */
 static void *eptp_list[MAX_EPTP_LIST_ENTRIES] __aligned(PAGE_SIZE);
@@ -498,12 +492,6 @@ int32_t create_vm(uint16_t vm_id, struct acrn_vm_config *vm_config, struct acrn_
 			create_prelaunched_vm_e820(vm);
 			prepare_prelaunched_vm_memmap(vm, vm_config);
 			status = init_vm_boot_info(vm);
-		 }
-
-		 if (vm_config->load_order == POST_LAUNCHED_VM) {
-			 /* for every post-launched VM, we allocate 2 pages for shared memory */
-			 ept_add_mr(vm, (uint64_t *)vm->arch_vm.nworld_eptp,
-			 	hva2hpa(shared_mem), SHARED_MEMORY_GPA, SHARED_MEMORY_SIZE, EPT_RWX);
 		 }
 	}
 

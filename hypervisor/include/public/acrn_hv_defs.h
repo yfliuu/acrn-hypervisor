@@ -30,6 +30,9 @@
 #define HC_SET_CALLBACK_VECTOR      BASE_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x02UL)
 #define HC_GET_PLATFORM_INFO        BASE_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x03UL)
 
+/* New hypercalls */
+#define HC_STITCH_EPT				BASE_HC_ID(HC_ID, HC_ID_GEN_BASE + 0x04UL)
+
 /* VM management */
 #define HC_ID_VM_BASE               0x10UL
 #define HC_CREATE_VM                BASE_HC_ID(HC_ID, HC_ID_VM_BASE + 0x00UL)

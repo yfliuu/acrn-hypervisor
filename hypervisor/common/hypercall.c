@@ -1184,3 +1184,50 @@ int32_t hcall_set_callback_vector(const struct acrn_vm *vm, uint64_t param)
 
 	return ret;
 }
+
+/**
+ * @brief retrieve a page table (GVA <-> GPA) of a certain process
+ * 
+ * This is the API that will first retrieve from the running kernel a page table
+ * structure of certain process. 
+ * 
+ * @return 0 on success, non-zero on error.
+ */
+int32_t hcall_stitch_ept(struct acrn_vcpu *vcpu, uint64_t pml4_root_gpa)
+{
+	int32_t ret = 0;
+	uint16_t para_vm_id;
+	uint64_t *pml4e_root_hva, *pml4e_dst;
+	struct acrn_vm *vm_src, *vm_dst;
+	struct memory_ops memops_bak, *mem_ops;
+
+	vm_src = vcpu->vm;
+	para_vm_id = 2;
+	vm_dst = get_vm_from_vmid(para_vm_id);
+	pml4e_root_hva = gpa2hva(vm_src, pml4_root_gpa);
+	pml4e_dst = (uint64_t *)vm_dst->arch_vm.ept_mem_ops.get_para_pml4_page(
+		vm_dst->arch_vm.ept_mem_ops.info);
+
+	/* Backup mem_ops */
+	memcpy_s(&memops_bak, sizeof(struct memory_ops),
+		&vm_dst->arch_vm.ept_mem_ops, sizeof(struct memory_ops));
+
+	/* Switch memory ops so that ept_add does not add to original ept */
+	mem_ops = &vm_dst->arch_vm.ept_mem_ops;
+	mem_ops->get_pml4_page = mem_ops->get_para_pml4_page;
+	mem_ops->get_pdpt_page = mem_ops->get_para_pdpt_page;
+	mem_ops->get_pd_page = mem_ops->get_para_pd_page;
+	mem_ops->get_pt_page = mem_ops->get_para_pt_page;
+
+	/* do actual copy */
+	ept_copy_from_pgtable(vm_src, vm_dst, pml4e_dst,
+		pml4e_root_hva, ept_pgtable_copy_handler);
+
+	/* Switch mem ops back */
+	memcpy_s(mem_ops, sizeof(struct memory_ops),
+		&memops_bak, sizeof(struct memory_ops));
+
+	/* Next, inform the custom kernel */
+	vcpu_inject_extint(vm_dst);
+	return ret;
+}
