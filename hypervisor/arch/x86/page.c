@@ -240,10 +240,10 @@ static inline uint16_t ept_get_operating_ept_id(const union pgtable_pages_info *
 static inline void ept_set_operating_ept_id(union pgtable_pages_info *info, uint16_t vm_id, uint16_t id)
 {
 	info->ept.operating_ept_id = id;
-	info->ept.para_pml4_base = pos_nworld_pml4_pages[vm_id - 2U][id];
-	info->ept.para_pdpt_base = pos_nworld_pdpt_pages[vm_id - 2U][id];
-	info->ept.para_pd_base = pos_nworld_pd_pages[vm_id - 2U][id];
-	info->ept.para_pt_base = pos_nworld_pt_pages[vm_id - 2U][id];
+	info->ept.para_pml4_base = pos_nworld_pml4_pages[vm_id - 1U][id];
+	info->ept.para_pdpt_base = pos_nworld_pdpt_pages[vm_id - 1U][id];
+	info->ept.para_pd_base = pos_nworld_pd_pages[vm_id - 1U][id];
+	info->ept.para_pt_base = pos_nworld_pt_pages[vm_id - 1U][id];
 }
 
 static inline uint16_t ept_get_operating_ept_count(const union pgtable_pages_info *info)

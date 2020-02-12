@@ -1202,7 +1202,7 @@ int32_t hcall_stitch_ept(struct acrn_vcpu *vcpu, uint64_t pml4_root_gpa)
 	struct memory_ops memops_bak, *mem_ops;
 
 	vm_src = vcpu->vm;
-	para_vm_id = 2;
+	para_vm_id = 1;
 	vm_dst = get_vm_from_vmid(para_vm_id);
 	pml4e_root_hva = gpa2hva(vm_src, pml4_root_gpa);
 	pml4e_dst = (uint64_t *)vm_dst->arch_vm.ept_mem_ops.get_para_pml4_page(
