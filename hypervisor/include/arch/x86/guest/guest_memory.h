@@ -95,12 +95,6 @@ int32_t copy_to_gpa(struct acrn_vm *vm, void *h_ptr, uint64_t gpa, uint32_t size
  */
 int32_t copy_from_gva(struct acrn_vcpu *vcpu, void *h_ptr, uint64_t gva,
 	uint32_t size, uint32_t *err_code, uint64_t *fault_addr);
-
-void ept_copy_from_pgtable(struct acrn_vm *vm_src, struct acrn_vm *vm_dst,
-	uint64_t *pml4e_dst, uint64_t *pml4e_gpt_hva,
-	void (*cb)(struct acrn_vm *vm_src, struct acrn_vm *vm_dst,
-		uint64_t *pml4e_dst, uint64_t *pgentry, uint64_t mask, uint64_t size));
-
 /**
  * @}
  */

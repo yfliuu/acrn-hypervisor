@@ -1186,48 +1186,161 @@ int32_t hcall_set_callback_vector(const struct acrn_vm *vm, uint64_t param)
 }
 
 /**
- * @brief retrieve a page table (GVA <-> GPA) of a certain process
- * 
- * This is the API that will first retrieve from the running kernel a page table
- * structure of certain process. 
- * 
- * @return 0 on success, non-zero on error.
+ * Parallel kernel related
  */
-int32_t hcall_stitch_ept(struct acrn_vcpu *vcpu, uint64_t pml4_root_gpa)
+
+struct addr_range {
+    uint64_t start;
+    uint64_t size;
+    uint64_t flags;
+};
+
+struct ioctl_param_grant {
+    struct addr_range vr;
+    struct addr_range pr;
+    size_t vr_n;
+    size_t pr_n;
+    char entry_name[16];
+    uint64_t entry;
+};
+
+struct ioctl_param_accept {
+    struct addr_range vr;
+    struct addr_range pr;
+};
+
+struct parakm_info {
+	uint16_t svm_id;
+	uint64_t svm_comm_buf_gpa;
+	uint16_t mvm_id;
+	struct addr_range req_vr;
+	struct addr_range m_pr;
+	struct addr_range s_pr;
+	uint64_t svm_orig_paddr_hpa;
+};
+
+static struct parakm_info parakm_info = {
+	.svm_id = 0xff,
+	.svm_comm_buf_gpa = 0x0
+};
+
+static int32_t ept_stitch_pr_to(struct acrn_vm *vm, uint64_t hpa, struct addr_range *pr)
 {
-	int32_t ret = 0;
-	uint16_t para_vm_id;
-	uint64_t *pml4e_root_hva, *pml4e_dst;
-	struct acrn_vm *vm_src, *vm_dst;
-	struct memory_ops memops_bak, *mem_ops;
+	uint64_t *pml4;
+	pml4 = vm->arch_vm.nworld_eptp;
+	parakm_info.svm_orig_paddr_hpa = gpa2hpa(vm, parakm_info.s_pr.start);
+	ept_del_mr(vm, pml4, pr->start, pr->size);
+	ept_add_mr(vm, pml4, hpa, pr->start, pr->size, EPT_RWX);
+	return 0;
+}
 
-	vm_src = vcpu->vm;
-	para_vm_id = 1;
-	vm_dst = get_vm_from_vmid(para_vm_id);
-	pml4e_root_hva = gpa2hva(vm_src, pml4_root_gpa);
-	pml4e_dst = (uint64_t *)vm_dst->arch_vm.ept_mem_ops.get_para_pml4_page(
-		vm_dst->arch_vm.ept_mem_ops.info);
+static int32_t ept_remove_stitch(struct acrn_vm *vm, struct addr_range *pr)
+{
+	uint64_t *pml4;
+	pml4 = vm->arch_vm.nworld_eptp;
+	ept_del_mr(vm, pml4, pr->start, pr->size);
+	ept_add_mr(vm, pml4, parakm_info.svm_orig_paddr_hpa, pr->start, pr->size, EPT_RWX);
+	return 0;
+}
 
-	/* Backup mem_ops */
-	memcpy_s(&memops_bak, sizeof(struct memory_ops),
-		&vm_dst->arch_vm.ept_mem_ops, sizeof(struct memory_ops));
+int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
+{
+	struct ioctl_param_grant pgrant;
+	struct acrn_vm *svm;
+	uint64_t svm_cbuf;
+	int32_t ret;
 
-	/* Switch memory ops so that ept_add does not add to original ept */
-	mem_ops = &vm_dst->arch_vm.ept_mem_ops;
-	mem_ops->get_pml4_page = mem_ops->get_para_pml4_page;
-	mem_ops->get_pdpt_page = mem_ops->get_para_pdpt_page;
-	mem_ops->get_pd_page = mem_ops->get_para_pd_page;
-	mem_ops->get_pt_page = mem_ops->get_para_pt_page;
+	pr_info("%s called with param: 0x%x", __func__, param);
 
-	/* do actual copy */
-	ept_copy_from_pgtable(vm_src, vm_dst, pml4e_dst,
-		pml4e_root_hva, ept_pgtable_copy_handler);
+	if (parakm_info.svm_id == 0xff) {
+		pr_err("%s: target vm not registered, please wait\n");
+		return -1;
+	}
 
-	/* Switch mem ops back */
-	memcpy_s(mem_ops, sizeof(struct memory_ops),
-		&memops_bak, sizeof(struct memory_ops));
+	ret = copy_from_gpa(vm, &pgrant, param, sizeof(struct ioctl_param_grant));
+	if (ret < 0) {
+		pr_err("%s: Error copying from master gpa: %x\n", __func__, param);
+		return ret;
+	}
 
-	/* Next, inform the custom kernel */
-	vcpu_inject_extint(vcpu);
-	return ret;
+	parakm_info.req_vr = pgrant.vr;
+	parakm_info.m_pr = pgrant.pr;
+
+	svm = get_vm_from_vmid(parakm_info.svm_id);
+	svm_cbuf = parakm_info.svm_comm_buf_gpa;
+	ret = copy_to_gpa(svm, &pgrant, svm_cbuf, sizeof(struct ioctl_param_grant));
+	if (ret < 0) {
+		pr_err("%s: Error copying to slave gpa: %x\n", __func__, svm_cbuf);
+		return ret;
+	}
+
+	return 0;
+}
+
+int32_t hcall_master_revoke(struct acrn_vm *vm, uint64_t param)
+{
+	uint16_t tvmid = (uint16_t)param;
+	struct acrn_vm *svm;
+
+	if (vm->vm_id != parakm_info.mvm_id) {
+		pr_err("%s: operation not permitted\n", __func__);
+		return -1;
+	}
+
+	pr_info("%s called with param: 0x%x", __func__, param);
+
+	if (tvmid != parakm_info.svm_id) {
+		pr_err("%s: target vmid not registered\n", __func__);
+		return -1;
+	}
+
+	svm = get_vm_from_vmid(tvmid);
+	ept_remove_stitch(svm, &parakm_info.s_pr);
+	return 0;
+}
+
+int32_t hcall_slave_register(const struct acrn_vm *vm, uint64_t param)
+{
+	pr_info("%s called with param: 0x%x", __func__, param);
+
+	parakm_info.svm_id = vm->vm_id;
+	parakm_info.svm_comm_buf_gpa = param;
+
+	return 0;
+}
+
+int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
+{
+	struct ioctl_param_accept paccept;
+	int32_t ret;
+	uint64_t hpa;
+	struct acrn_vm *mvm;
+
+	pr_info("%s called with param: 0x%x", __func__, param);
+	if (vm->vm_id != parakm_info.svm_id) {
+		pr_err("%s: Operation not permitted\n", __func__);
+		return -1;
+	}
+
+	ret = copy_from_gpa(vm, &paccept, param, sizeof(struct ioctl_param_accept));
+	if (ret < 0) {
+		pr_err("%s: Error copying from slave gpa: %x\n", __func__, param);
+		return ret;
+	}
+
+	if (paccept.vr.start != parakm_info.req_vr.start) {
+		pr_err("%s: error stitching: address ranges don't match\n", __func__);
+		return -1;
+	}
+
+	parakm_info.s_pr = paccept.pr;
+	mvm = get_vm_from_vmid(parakm_info.mvm_id);
+	hpa = gpa2hpa(mvm, parakm_info.m_pr.start);
+	ret = ept_stitch_pr_to(vm, hpa, &paccept.pr);
+	if (ret < 0) {
+		pr_err("%s: error stitching: operation failed\n");
+		return ret;
+	}
+
+	return 0;
 }

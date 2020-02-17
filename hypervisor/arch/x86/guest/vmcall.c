@@ -239,9 +239,18 @@ int32_t vmcall_vmexit_handler(struct acrn_vcpu *vcpu)
 		ret = hcall_initialize_trusty(vcpu, param1);
 	} else if (hypcall_id == HC_SAVE_RESTORE_SWORLD_CTX) {
 		ret = hcall_save_restore_sworld_ctx(vcpu);
-	} else if (hypcall_id == HC_STITCH_EPT) {
+	} else if (hypcall_id == HC_MASTER_GRANT) {
 		uint64_t param1 = vcpu_get_gpreg(vcpu, CPU_REG_RDI);
-		ret = hcall_stitch_ept(vcpu, param1);
+		ret = hcall_master_grant(vcpu->vm, param1);
+	} else if (hypcall_id == HC_MASTER_REVOKE) {
+		uint64_t param1 = vcpu_get_gpreg(vcpu, CPU_REG_RDI);
+		ret = hcall_master_revoke(vcpu->vm, param1);
+	} else if (hypcall_id == HC_SLAVE_REGISTER) {
+		uint64_t param1 = vcpu_get_gpreg(vcpu, CPU_REG_RDI);
+		ret = hcall_slave_register(vcpu->vm, param1);
+	} else if (hypcall_id == HC_SLAVE_ACCEPT) {
+		uint64_t param1 = vcpu_get_gpreg(vcpu, CPU_REG_RDI);
+		ret = hcall_slave_accept(vcpu->vm, param1);
 	} else if (is_sos_vm(vm)) {
 		/* Dispatch the hypercall handler */
 		ret = dispatch_sos_hypercall(vcpu);

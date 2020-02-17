@@ -232,26 +232,3 @@ void walk_ept_table(struct acrn_vm *vm, pge_handler cb)
 		}
 	}
 }
-
-/**
- * This function is called once for every leaf entry of page table
- * of guest OS. Maps only user mode pages.
- * 
- * the entry points to hva of an entry.
- */
-void ept_pgtable_copy_handler(struct acrn_vm *vm_src, struct acrn_vm *vm_dst,
-	uint64_t *pml4e_dst, uint64_t *entry, uint64_t mask, uint64_t size)
-{
-	uint64_t gpa, hpa;
-
-	/* map only user mode pages */
-	if (!(*entry & PAGE_USER))
-		return;
-
-	gpa = (*entry) & mask;
-	hpa = gpa2hpa(vm_src, gpa);
-
-	/* copy this gpa -> hpa mapping to vm_dst */
-	/* TODO: the flag should be kept same as src */
-	ept_add_mr(vm_dst, pml4e_dst, hpa, gpa, size, EPT_RWX);
-}

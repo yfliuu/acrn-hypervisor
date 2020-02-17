@@ -138,9 +138,6 @@
 #define PML4E_PFN_MASK		0x0000FFFFFFFFF000UL
 #define PDPTE_PFN_MASK		0x0000FFFFFFFFF000UL
 #define PDE_PFN_MASK		0x0000FFFFFFFFF000UL
-
-void *gpa2hva(struct acrn_vm *vm, uint64_t x);
-
 /**
  * @brief Address space translation
  *
@@ -247,36 +244,6 @@ static inline uint64_t *pde_offset(const uint64_t *pdpte, uint64_t addr)
 static inline uint64_t *pte_offset(const uint64_t *pde, uint64_t addr)
 {
 	return pde_page_vaddr(*pde) + pte_index(addr);
-}
-
-/**
- * Take hva and return hva
- */
-static inline uint64_t *guest_pml4e_offset(uint64_t *pml4_page, uint64_t addr)
-{
-	return pml4_page + pml4e_index(addr);
-}
-
-/**
- * pml4e should look like this:
- * 	pml4e ----> ------------
- * 				| some gpa |
- * 				------------
- * So we take in an hva, and return the hva of pdpte
- */
-static inline uint64_t *guest_pdpte_offset(struct acrn_vm *vm, const uint64_t *pml4e, uint64_t addr)
-{
-	return gpa2hva(vm, *pml4e & PML4E_PFN_MASK) + pdpte_index(addr);
-}
-
-static inline uint64_t *guest_pde_offset(struct acrn_vm *vm, const uint64_t *pdpte, uint64_t addr)
-{
-	return gpa2hva(vm, *pdpte & PDPTE_PFN_MASK) + pde_index(addr);
-}
-
-static inline uint64_t *guest_pte_offset(struct acrn_vm *vm, const uint64_t *pde, uint64_t addr)
-{
-	return gpa2hva(vm, *pde & PDE_PFN_MASK) + pte_index(addr);
 }
 
 /*

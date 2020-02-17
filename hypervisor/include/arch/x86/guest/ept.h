@@ -9,8 +9,6 @@
 #include <types.h>
 
 typedef void (*pge_handler)(uint64_t *pgentry, uint64_t size);
-typedef void (*ept_pg_copy_handler)(struct acrn_vm *vm_src, struct acrn_vm *vm_dst,
-			uint64_t *pml4e_dst, uint64_t *pgentry, uint64_t mask, uint64_t size);
 
 /**
  * Invalid HPA is defined for error checking,
@@ -150,9 +148,6 @@ void walk_ept_table(struct acrn_vm *vm, pge_handler cb);
  * @retval 0 Success to handle the EPT misconfig
  */
 int32_t ept_misconfig_vmexit_handler(__unused struct acrn_vcpu *vcpu);
-
-void ept_pgtable_copy_handler(struct acrn_vm *vm_src, struct acrn_vm *vm_dst,
-	uint64_t *pml4e_dst, uint64_t *entry, uint64_t mask, uint64_t size);
 
 /**
  * @}
