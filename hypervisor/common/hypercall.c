@@ -1229,6 +1229,10 @@ static int32_t ept_stitch_pr_to(struct acrn_vm *vm, uint64_t hpa, struct addr_ra
 	uint64_t *pml4;
 	pml4 = vm->arch_vm.nworld_eptp;
 	parakm_info.svm_orig_paddr_hpa = gpa2hpa(vm, parakm_info.s_pr.start);
+
+	pr_info("%s: vm%d: remapping gpa 0x%x from hpa 0x%x to hpa 0x%x size 0x%x\n", 
+		__func__, vm->vm_id, pr->start, parakm_info.svm_orig_paddr_hpa, hpa, pr->size);
+
 	ept_del_mr(vm, pml4, pr->start, pr->size);
 	ept_add_mr(vm, pml4, hpa, pr->start, pr->size, EPT_RWX);
 	return 0;
@@ -1238,6 +1242,10 @@ static int32_t ept_remove_stitch(struct acrn_vm *vm, struct addr_range *pr)
 {
 	uint64_t *pml4;
 	pml4 = vm->arch_vm.nworld_eptp;
+
+	pr_info("%s: vm%d: remapping gpa 0x%x back to hpa 0x%x size 0x%x\n", 
+		__func__, vm->vm_id, pr->start, parakm_info.svm_orig_paddr_hpa, pr->size);
+
 	ept_del_mr(vm, pml4, pr->start, pr->size);
 	ept_add_mr(vm, pml4, parakm_info.svm_orig_paddr_hpa, pr->start, pr->size, EPT_RWX);
 	return 0;
@@ -1265,6 +1273,8 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 
 	parakm_info.req_vr = pgrant.vr;
 	parakm_info.m_pr = pgrant.pr;
+	pr_info("%s: req_vr: 0x%x, master pr: 0x%x, size: 0x%x\n", __func__, 
+		pgrant.vr.start, pgrant.pr, pgrant.vr.size);
 
 	svm = get_vm_from_vmid(parakm_info.svm_id);
 	svm_cbuf = parakm_info.svm_comm_buf_gpa;
@@ -1273,6 +1283,8 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 		pr_err("%s: Error copying to slave gpa: %x\n", __func__, svm_cbuf);
 		return ret;
 	}
+
+	parakm_info.mvm_id = vm->vm_id;
 
 	return parakm_info.svm_id;
 }
