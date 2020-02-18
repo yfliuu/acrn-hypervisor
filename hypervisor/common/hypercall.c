@@ -1274,7 +1274,7 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 		return ret;
 	}
 
-	return 0;
+	return parakm_info.svm_id;
 }
 
 int32_t hcall_master_revoke(struct acrn_vm *vm, uint64_t param)
