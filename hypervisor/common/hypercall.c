@@ -1193,21 +1193,21 @@ struct addr_range {
     uint64_t start;
     uint64_t size;
     uint64_t flags;
-};
+} __attribute__((packed));
 
 struct ioctl_param_grant {
     struct addr_range vr;
     struct addr_range pr;
-    size_t vr_n;
-    size_t pr_n;
-    char entry_name[16];
+    uint64_t vr_n;
+    uint64_t pr_n;
+    uint8_t entry_name[16];
     uint64_t entry;
-};
+} __attribute__((packed));
 
 struct ioctl_param_accept {
     struct addr_range vr;
     struct addr_range pr;
-};
+} __attribute__((packed));
 
 struct parakm_info {
 	uint16_t svm_id;
@@ -1265,6 +1265,7 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 		return -1;
 	}
 
+	pr_info("Copying %x bytes from 0x%x", sizeof(struct ioctl_param_grant), param);
 	ret = copy_from_gpa(vm, &pgrant, param, sizeof(struct ioctl_param_grant));
 	if (ret < 0) {
 		pr_err("%s: Error copying from master gpa: %x\n", __func__, param);
@@ -1274,7 +1275,7 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 	parakm_info.req_vr = pgrant.vr;
 	parakm_info.m_pr = pgrant.pr;
 	pr_info("%s: req_vr: 0x%x, master pr: 0x%x, size: 0x%x\n", __func__, 
-		pgrant.vr.start, pgrant.pr, pgrant.vr.size);
+		pgrant.vr.start, pgrant.pr.start, pgrant.vr.size);
 
 	svm = get_vm_from_vmid(parakm_info.svm_id);
 	svm_cbuf = parakm_info.svm_comm_buf_gpa;
@@ -1325,7 +1326,7 @@ int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
 {
 	struct ioctl_param_accept paccept;
 	int32_t ret;
-	uint64_t hpa;
+	uint64_t hpa, i;
 	struct acrn_vm *mvm;
 
 	pr_info("%s called with param: 0x%x", __func__, param);
@@ -1348,10 +1349,26 @@ int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
 	parakm_info.s_pr = paccept.pr;
 	mvm = get_vm_from_vmid(parakm_info.mvm_id);
 	hpa = gpa2hpa(mvm, parakm_info.m_pr.start);
+	pr_info("ready to restitch master pr 0x%x (hpa: 0x%x) and slave pr 0x%x (hpa: 0x%x)\n", 
+		parakm_info.m_pr.start, hpa, paccept.pr.start, gpa2hpa(vm, paccept.pr.start));
 	ret = ept_stitch_pr_to(vm, hpa, &paccept.pr);
 	if (ret < 0) {
 		pr_err("%s: error stitching: operation failed\n");
 		return ret;
+	}
+
+	/* verify that we map them to the same place */
+	for (i = 0; i < parakm_info.m_pr.size; i++) {
+		uint64_t gpa_m = parakm_info.m_pr.start + i;
+		uint64_t gpa_s = parakm_info.s_pr.start + i;
+		uint64_t hpa_m = gpa2hpa(mvm, gpa_m);
+		uint64_t hpa_s = gpa2hpa(vm, gpa_s);
+
+		if (hpa_m != hpa_s) {
+			pr_err("%s: error: gpa_m 0x%x (0x%x) and gpa_s 0x%x (0x%x) does not map to the same hpa!\n",
+				gpa_m, hpa_m, gpa_s, hpa_s);
+			return -1;
+		}
 	}
 
 	return 0;
