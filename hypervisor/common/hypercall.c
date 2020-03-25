@@ -1186,8 +1186,14 @@ int32_t hcall_set_callback_vector(const struct acrn_vm *vm, uint64_t param)
 }
 
 /**
- * Parallel kernel related
+ * Cross invocation related
  */
+#define CRINV_STATE_INACTIVE		0
+#define CRINV_STATE_SLAVE			1
+#define CRINV_STATE_SLAVE_ACCEPTED	2
+#define CRINV_STATE_MASTER			3
+
+#define CRINV_MAX_ADDR_RANGE	16
 
 struct addr_range {
     uint64_t start;
@@ -1195,178 +1201,179 @@ struct addr_range {
     uint64_t flags;
 } __attribute__((packed));
 
-struct ioctl_param_grant {
-    struct addr_range vr;
-    struct addr_range pr;
-    uint64_t vr_n;
-    uint64_t pr_n;
-    uint8_t entry_name[16];
+struct shm_area_struct {
+	struct addr_range vr[CRINV_MAX_ADDR_RANGE];
+    struct addr_range pr[CRINV_MAX_ADDR_RANGE];
     uint64_t entry;
+    uint16_t vr_n;
+    uint16_t tid;
 } __attribute__((packed));
 
-struct ioctl_param_accept {
-    struct addr_range vr;
-    struct addr_range pr;
-} __attribute__((packed));
-
-struct parakm_info {
-	uint16_t svm_id;
-	uint64_t svm_comm_buf_gpa;
-	uint16_t mvm_id;
-	struct addr_range req_vr;
-	struct addr_range m_pr;
-	struct addr_range s_pr;
-	uint64_t svm_orig_paddr_hpa;
+struct crinv_info {
+	uint64_t vm_comm_buf_gpa;
+	uint16_t state;
+	uint64_t hpa_pr[CRINV_MAX_ADDR_RANGE];
+	struct shm_area_struct vma;
+	struct shm_area_struct *tvma;
 };
 
-static struct parakm_info parakm_info = {
-	.svm_id = 0xff,
-	.svm_comm_buf_gpa = 0x0
-};
+static struct crinv_info c_info[4];
 
-static int32_t ept_stitch_pr_to(struct acrn_vm *vm, uint64_t hpa, struct addr_range *pr)
+/**
+ * Remap EPT of @vm's @gpa to @to_hpa.
+ * 
+ * @vm: target vm
+ * @gpa: gpa that will be remapped
+ * @to_hpa: hpa that will be remapped to
+ * @size: size of remapping
+ */
+static int32_t ept_remap(struct acrn_vm *vm, uint64_t gpa, uint64_t to_hpa, uint64_t size)
 {
-	uint64_t *pml4;
-	pml4 = vm->arch_vm.nworld_eptp;
-	parakm_info.svm_orig_paddr_hpa = gpa2hpa(vm, parakm_info.s_pr.start);
-
-	pr_info("%s: vm%d: remapping gpa 0x%x from hpa 0x%x to hpa 0x%x size 0x%x\n", 
-		__func__, vm->vm_id, pr->start, parakm_info.svm_orig_paddr_hpa, hpa, pr->size);
-
-	ept_del_mr(vm, pml4, pr->start, pr->size);
-	ept_add_mr(vm, pml4, hpa, pr->start, pr->size, EPT_RWX);
+	uint64_t *pml4 = vm->arch_vm.nworld_eptp;
+	ept_del_mr(vm, pml4, gpa, size);
+	ept_add_mr(vm, pml4, to_hpa, gpa, size, EPT_RWX);
 	return 0;
 }
 
-static int32_t ept_remove_stitch(struct acrn_vm *vm, struct addr_range *pr)
+static void dump_shm_area_struct(struct shm_area_struct *vma)
 {
-	uint64_t *pml4;
-	pml4 = vm->arch_vm.nworld_eptp;
-
-	pr_info("%s: vm%d: remapping gpa 0x%x back to hpa 0x%x size 0x%x\n", 
-		__func__, vm->vm_id, pr->start, parakm_info.svm_orig_paddr_hpa, pr->size);
-
-	ept_del_mr(vm, pml4, pr->start, pr->size);
-	ept_add_mr(vm, pml4, parakm_info.svm_orig_paddr_hpa, pr->start, pr->size, EPT_RWX);
-	return 0;
+	int i;
+	pr_info("VMA: vr_n: %d, entry: 0x%x, tid: %d", vma->vr_n,
+		vma->entry, vma->tid);
+	for (i = 0; i < vma->vr_n; i++) {
+		pr_info("vr%d: start: 0x%x, size: 0x%x, flags: 0x%x", i, 
+			vma->vr[i].start, vma->vr[i].size, vma->vr[i].flags);
+		pr_info("pr%d: start: 0x%x, size: 0x%x, flags: 0x%x", i, 
+			vma->pr[i].start, vma->pr[i].size, vma->pr[i].flags);
+	}
 }
 
 int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 {
-	struct ioctl_param_grant pgrant;
-	struct acrn_vm *svm;
-	uint64_t svm_cbuf;
+	struct acrn_vm *tvm;
+	struct crinv_info *info;
+	int i;
 	int32_t ret;
 
-	pr_info("%s called with param: 0x%x", __func__, param);
-
-	if (parakm_info.svm_id == 0xff) {
-		pr_err("%s: target vm not registered, please wait\n");
+	info = &c_info[vm->vm_id];
+	if (info->state != CRINV_STATE_INACTIVE) {
+		pr_err("Previous operations not completed.\n");
 		return -1;
 	}
-
-	pr_info("Copying %x bytes from 0x%x", sizeof(struct ioctl_param_grant), param);
-	ret = copy_from_gpa(vm, &pgrant, param, sizeof(struct ioctl_param_grant));
+	
+	pr_info("%s called with param: 0x%x", __func__, param);
+	pr_info("Copying %x bytes from 0x%x", sizeof(struct shm_area_struct), param);
+	ret = copy_from_gpa(vm, &info->vma, param, sizeof(struct shm_area_struct));
 	if (ret < 0) {
 		pr_err("%s: Error copying from master gpa: %x\n", __func__, param);
 		return ret;
 	}
 
-	parakm_info.req_vr = pgrant.vr;
-	parakm_info.m_pr = pgrant.pr;
-	pr_info("%s: req_vr: 0x%x, master pr: 0x%x, size: 0x%x\n", __func__, 
-		pgrant.vr.start, pgrant.pr.start, pgrant.vr.size);
+	if (info->vma.tid >= 4) {
+		pr_err("Invalid target id\n");
+		return -1;
+	}
 
-	svm = get_vm_from_vmid(parakm_info.svm_id);
-	svm_cbuf = parakm_info.svm_comm_buf_gpa;
-	ret = copy_to_gpa(svm, &pgrant, svm_cbuf, sizeof(struct ioctl_param_grant));
+	if (c_info[info->vma.tid].state != CRINV_STATE_SLAVE) {
+		pr_err("Target vm not registered\n");
+		return -1;
+	}
+
+	info->state = CRINV_STATE_MASTER;
+	info->tvma = &(c_info[info->vma.tid].vma);
+	dump_shm_area_struct(&info->vma);
+	for (i = 0; i < info->vma.vr_n; i++) {
+		info->hpa_pr[i] = gpa2hpa(vm, info->vma.pr[i].start);
+	}
+
+	tvm = get_vm_from_vmid(info->vma.tid);
+	ret = copy_to_gpa(tvm, &info->vma, c_info[info->vma.tid].vm_comm_buf_gpa, sizeof(struct shm_area_struct));
 	if (ret < 0) {
-		pr_err("%s: Error copying to slave gpa: %x\n", __func__, svm_cbuf);
+		pr_err("%s: Error copying to slave gpa: %x\n", __func__, c_info[info->vma.tid].vm_comm_buf_gpa);
 		return ret;
 	}
 
-	parakm_info.mvm_id = vm->vm_id;
-
-	return parakm_info.svm_id;
+	return 0;
 }
 
-int32_t hcall_master_revoke(struct acrn_vm *vm, uint64_t param)
+int32_t hcall_master_revoke(struct acrn_vm *vm, uint64_t __unused param)
 {
-	uint16_t tvmid = (uint16_t)param;
 	struct acrn_vm *svm;
+	struct crinv_info *info;
+	int i;
 
-	if (vm->vm_id != parakm_info.mvm_id) {
-		pr_err("%s: operation not permitted\n", __func__);
+	info = &c_info[vm->vm_id];
+	if (info->state != CRINV_STATE_MASTER) {
+		pr_err("Nothing to revoke\n");
 		return -1;
 	}
 
-	pr_info("%s called with param: 0x%x", __func__, param);
-
-	if (tvmid != parakm_info.svm_id) {
-		pr_err("%s: target vmid not registered\n", __func__);
-		return -1;
+	if (c_info[info->vma.tid].state == CRINV_STATE_SLAVE_ACCEPTED) {
+		/* If remapping has been done */
+        svm = get_vm_from_vmid(info->vma.tid);
+        for (i = 0; i < info->vma.vr_n; i++) {
+			ept_remap(svm, info->tvma->pr[i].start, c_info[info->vma.tid].hpa_pr[i], info->tvma->pr[i].size);
+        }
 	}
 
-	svm = get_vm_from_vmid(tvmid);
-	ept_remove_stitch(svm, &parakm_info.s_pr);
+	memset(info, 0, sizeof(struct crinv_info));
 	return 0;
 }
 
 int32_t hcall_slave_register(const struct acrn_vm *vm, uint64_t param)
 {
-	pr_info("%s called with param: 0x%x", __func__, param);
+	struct crinv_info *info;
 
-	parakm_info.svm_id = vm->vm_id;
-	parakm_info.svm_comm_buf_gpa = param;
+	pr_info("%s called with param: 0x%x", __func__, param);
+	info = &c_info[vm->vm_id];
+	if (info->state != CRINV_STATE_INACTIVE) {
+		pr_err("Previous operations not completed\n");
+		return -1;
+	}
+
+	info->vm_comm_buf_gpa = param;
+	info->state = CRINV_STATE_SLAVE;
 
 	return 0;
 }
 
 int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
 {
-	struct ioctl_param_accept paccept;
 	int32_t ret;
-	uint64_t hpa, i;
-	struct acrn_vm *mvm;
+	int i;
+	struct crinv_info *info;
 
+	info = &c_info[vm->vm_id];
 	pr_info("%s called with param: 0x%x", __func__, param);
-	if (vm->vm_id != parakm_info.svm_id) {
-		pr_err("%s: Operation not permitted\n", __func__);
+	if (info->state != CRINV_STATE_SLAVE) {
+		pr_err("You have not registered yet\n");
 		return -1;
 	}
 
-	ret = copy_from_gpa(vm, &paccept, param, sizeof(struct ioctl_param_accept));
+	ret = copy_from_gpa(vm, &info->vma, param, sizeof(struct shm_area_struct));
 	if (ret < 0) {
 		pr_err("%s: Error copying from slave gpa: %x\n", __func__, param);
 		return ret;
 	}
 
-	if (paccept.vr.start != parakm_info.req_vr.start) {
-		pr_err("%s: error stitching: address ranges don't match\n", __func__);
+	info->tvma = &c_info[info->vma.tid].vma;
+	if (info->tvma->tid != vm->vm_id || c_info[info->vma.tid].state != CRINV_STATE_MASTER) {
+		pr_err("Permission denied: target vm%d has not granted anything to you", info->vma.tid);
 		return -1;
 	}
 
-	parakm_info.s_pr = paccept.pr;
-	mvm = get_vm_from_vmid(parakm_info.mvm_id);
-	hpa = gpa2hpa(mvm, parakm_info.m_pr.start);
-	pr_info("ready to restitch master pr 0x%x (hpa: 0x%x) and slave pr 0x%x (hpa: 0x%x)\n", 
-		parakm_info.m_pr.start, hpa, paccept.pr.start, gpa2hpa(vm, paccept.pr.start));
-	ret = ept_stitch_pr_to(vm, hpa, &paccept.pr);
-	if (ret < 0) {
-		pr_err("%s: error stitching: operation failed\n");
-		return ret;
-	}
+	info->state = CRINV_STATE_SLAVE_ACCEPTED;
 
-	/* verify that we map them to the same place */
-	for (i = 0; i < parakm_info.m_pr.size; i++) {
-		uint64_t gpa_m = parakm_info.m_pr.start + i;
-		uint64_t gpa_s = parakm_info.s_pr.start + i;
-		uint64_t hpa_m = gpa2hpa(mvm, gpa_m);
-		uint64_t hpa_s = gpa2hpa(vm, gpa_s);
-
-		if (hpa_m != hpa_s) {
-			pr_err("%s: error: gpa_m 0x%x (0x%x) and gpa_s 0x%x (0x%x) does not map to the same hpa!\n",
-				gpa_m, hpa_m, gpa_s, hpa_s);
+	for (i = 0; i < info->vma.vr_n; i++) {
+		if (info->vma.vr[i].start != info->tvma->vr[i].start || info->vma.vr[i].size != info->tvma->vr[i].size) {
+			pr_err("VAddress doen not match: provided: 0x%x:0x%x, target: 0x%x:0x%x\n", 
+				info->vma.vr[i].start, info->vma.vr[i].size, info->tvma->vr[i].start, info->tvma->vr[i].size);
+			return -1;
+		}
+		info->hpa_pr[i] = gpa2hpa(vm, info->vma.pr[i].start);
+		ret = ept_remap(vm, info->vma.pr[i].start, c_info[info->vma.tid].hpa_pr[i], info->vma.pr[i].size);
+		if (ret < 0) {
+			pr_err("%s: error remapping: operation failed", __func__);
 			return -1;
 		}
 	}
