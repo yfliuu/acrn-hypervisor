@@ -1230,12 +1230,13 @@ static struct crinv_info c_info[4];
 static int32_t ept_remap(struct acrn_vm *vm, uint64_t gpa, uint64_t to_hpa, uint64_t size)
 {
 	uint64_t *pml4 = vm->arch_vm.nworld_eptp;
+	pr_info("Remapping gpa 0x%x to hpa 0x%x, size 0x%x", gpa, to_hpa, size);
 	ept_del_mr(vm, pml4, gpa, size);
 	ept_add_mr(vm, pml4, to_hpa, gpa, size, EPT_RWX);
 	return 0;
 }
 
-static void dump_shm_area_struct(struct shm_area_struct *vma)
+static __unused void dump_shm_area_struct(struct shm_area_struct *vma)
 {
 	int i;
 	pr_info("VMA: vr_n: %d, entry: 0x%x, tid: %d", vma->vr_n,
@@ -1281,9 +1282,11 @@ int32_t hcall_master_grant(struct acrn_vm *vm, uint64_t param)
 
 	info->state = CRINV_STATE_MASTER;
 	info->tvma = &(c_info[info->vma.tid].vma);
-	dump_shm_area_struct(&info->vma);
+	// dump_shm_area_struct(&info->vma);
 	for (i = 0; i < info->vma.vr_n; i++) {
 		info->hpa_pr[i] = gpa2hpa(vm, info->vma.pr[i].start);
+		// pr_info("%s: gpa<->hpa: 0x%x<->0x%x", __func__, info->vma.pr[i].start, info->hpa_pr[i]);
+		// pr_gpa(vm, info->vma.pr[i].start);
 	}
 
 	tvm = get_vm_from_vmid(info->vma.tid);
@@ -1324,6 +1327,12 @@ int32_t hcall_slave_register(const struct acrn_vm *vm, uint64_t param)
 {
 	struct crinv_info *info;
 
+	/* TODO: TEST ONLY */
+	int i;
+	for (i = 0; i < 4; i++) {
+		memset(&c_info[i], 0, sizeof(struct crinv_info));
+	}
+
 	pr_info("%s called with param: 0x%x", __func__, param);
 	info = &c_info[vm->vm_id];
 	if (info->state != CRINV_STATE_INACTIVE) {
@@ -1356,6 +1365,9 @@ int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
 		return ret;
 	}
 
+	// pr_info("%s: dumping shm_area_struct", __func__);
+	// dump_shm_area_struct(&info->vma);
+
 	info->tvma = &c_info[info->vma.tid].vma;
 	if (info->tvma->tid != vm->vm_id || c_info[info->vma.tid].state != CRINV_STATE_MASTER) {
 		pr_err("Permission denied: target vm%d has not granted anything to you", info->vma.tid);
@@ -1371,6 +1383,8 @@ int32_t hcall_slave_accept(struct acrn_vm *vm, uint64_t param)
 			return -1;
 		}
 		info->hpa_pr[i] = gpa2hpa(vm, info->vma.pr[i].start);
+		// pr_info("%s: gpa<->hpa: 0x%x<->0x%x", __func__, info->vma.pr[i].start, info->hpa_pr[i]);
+		// pr_gpa(vm, info->vma.pr[i].start);
 		ret = ept_remap(vm, info->vma.pr[i].start, c_info[info->vma.tid].hpa_pr[i], info->vma.pr[i].size);
 		if (ret < 0) {
 			pr_err("%s: error remapping: operation failed", __func__);
